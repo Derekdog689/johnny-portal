@@ -10,6 +10,7 @@ export default function WellnessPage() {
   const [exercise, setExercise] = useState('')
   const [journal, setJournal] = useState('')
   const [loading, setLoading] = useState(false)
+  const [downloading, setDownloading] = useState(false)
 
   // -----------------------------
   // Fetch wellness entries for authenticated user
@@ -22,7 +23,6 @@ export default function WellnessPage() {
       return
     }
 
-    // Find the matching beneficiary record for this user
     const { data: beneficiary, error: benError } = await supabase
       .from('beneficiaries')
       .select('id')
@@ -34,7 +34,6 @@ export default function WellnessPage() {
       return
     }
 
-    // Fetch wellness entries linked to this beneficiary
     const { data, error } = await supabase
       .from('wellness')
       .select('*')
@@ -64,7 +63,6 @@ export default function WellnessPage() {
       return
     }
 
-    // Fetch the beneficiary ID for the logged-in user's email
     const { data: beneficiary, error: benError } = await supabase
       .from('beneficiaries')
       .select('id')
@@ -78,7 +76,6 @@ export default function WellnessPage() {
       return
     }
 
-    // Insert new wellness entry using beneficiary_id
     const { error } = await supabase.from('wellness').insert({
       beneficiary_id: beneficiary.id,
       mood_level: mood ? parseInt(mood) : null,
@@ -95,10 +92,24 @@ export default function WellnessPage() {
       setSleep('')
       setExercise('')
       setJournal('')
-      fetchEntries() // refresh entries after saving
+      fetchEntries()
     }
 
     setLoading(false)
+  }
+
+  // -----------------------------
+  // Handle PDF Download
+  // -----------------------------
+  const handleDownloadPDF = async () => {
+    setDownloading(true)
+    try {
+      window.open('/api/report-proxy', '_blank')
+    } catch (err) {
+      console.error('Error opening PDF:', err)
+    } finally {
+      setDownloading(false)
+    }
   }
 
   // -----------------------------
@@ -158,7 +169,7 @@ export default function WellnessPage() {
       </section>
 
       {/* Display Entries */}
-      <section>
+      <section className="mb-10">
         <h2 className="font-semibold text-lg mb-3">Recent Entries</h2>
         <ul className="space-y-2">
           {entries.map((e) => (
@@ -184,6 +195,17 @@ export default function WellnessPage() {
           )}
         </ul>
       </section>
+
+      {/* Generate Report Button */}
+      <div className="mt-8 flex justify-center">
+        <button
+          onClick={handleDownloadPDF}
+          disabled={downloading}
+          className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded"
+        >
+          {downloading ? 'Generating PDF…' : 'Generate Wellness PDF'}
+        </button>
+      </div>
     </main>
   )
 }
