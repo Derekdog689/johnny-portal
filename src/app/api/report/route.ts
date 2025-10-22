@@ -86,11 +86,11 @@ export async function GET() {
     });
 
     console.log("✅ PDF successfully generated with RobotoMono");
-    return new Response(pdfBuffer, {
-      headers: {
-        "Content-Type": "application/pdf",
-        "Content-Disposition": "attachment; filename=wellness_report.pdf",
-      },
+    return new Response(new Uint8Array(pdfBuffer), {
+  headers: {
+    "Content-Type": "application/pdf",
+    "Content-Disposition": "attachment; filename=wellness_report.pdf",
+  },
     });
   } catch (err: any) {
     console.error("💥 PDF export error:", err);
