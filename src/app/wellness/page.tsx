@@ -99,18 +99,33 @@ export default function WellnessPage() {
   }
 
   // -----------------------------
-  // Handle PDF Download
-  // -----------------------------
-  const handleDownloadPDF = async () => {
-    setDownloading(true)
-    try {
-      window.open('/api/report-proxy', '_blank')
-    } catch (err) {
-      console.error('Error opening PDF:', err)
-    } finally {
-      setDownloading(false)
+// Handle PDF Download (Vercel-safe)
+// -----------------------------
+const handleDownloadPDF = async () => {
+  setDownloading(true)
+  try {
+    const res = await fetch('/api/export', { method: 'GET' })
+
+    if (!res.ok) {
+      throw new Error(`Export failed with status ${res.status}`)
     }
+
+    const blob = await res.blob()
+    const url = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = 'wellness_report.pdf'
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    window.URL.revokeObjectURL(url)
+  } catch (err) {
+    console.error('PDF export failed:', err)
+    alert('Unable to generate report. Please try again.')
+  } finally {
+    setDownloading(false)
   }
+}
 
   // -----------------------------
   // Render Page
