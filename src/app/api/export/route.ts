@@ -7,10 +7,10 @@ import { PassThrough } from "stream"
 
 export async function GET() {
   try {
-    // ✅ Create Supabase client
+    // ✅ Connect to Supabase
     const supabase = await createSupabaseServer()
 
-    // ✅ Query wellness data
+    // ✅ Query your wellness data
     const { data, error } = await supabase
       .from("wellness")
       .select("created_at, mood_level, sleep_hours, exercise_minutes, journal_entry")
@@ -21,22 +21,22 @@ export async function GET() {
       return NextResponse.json({ message: "No data available" }, { status: 404 })
     }
 
-    // ✅ Initialize PDF and stream
+    // ✅ Build the PDF and pipe it into memory
     const stream = new PassThrough()
-    const doc = new PDFDocument({
-  margin: 50,
-  font: path.join(process.cwd(), "public", "fonts", "RobotoMono-Regular.ttf"),
-})
 
-    // ✅ Register Roboto Mono font (prevents Helvetica.afm error)
+    // Direct font path — Vercel-safe
     const fontPath = path.join(process.cwd(), "public", "fonts", "RobotoMono-Regular.ttf")
     if (!fs.existsSync(fontPath)) {
-      console.error("Font file not found:", fontPath)
-      throw new Error(`Font not found at ${fontPath}`)
+      console.warn("⚠️ RobotoMono font not found, PDF will fallback to default")
     }
 
-    
-    // ✅ Pipe PDF to stream
+    const doc = new PDFDocument({
+      margin: 50,
+      font: fs.existsSync(fontPath)
+        ? fontPath
+        : undefined, // fallback safely if font missing
+    })
+
     doc.pipe(stream)
 
     // ---------- PDF CONTENT ----------
@@ -45,7 +45,6 @@ export async function GET() {
     doc.fontSize(12).text(`Generated: ${new Date().toLocaleString()}`)
     doc.moveDown()
 
-    // Summary averages
     const avgMood =
       data.reduce((a, r) => a + (r.mood_level || 0), 0) / data.length
     const avgSleep =
@@ -58,13 +57,16 @@ export async function GET() {
     doc.text(`Average Exercise: ${avgExercise.toFixed(2)} minutes`)
     doc.moveDown()
 
-    // Entries
     doc.fontSize(14).text("Entries", { underline: true })
     doc.moveDown(0.5)
 
     data.forEach((r) => {
       doc.fontSize(12).text(
-        `${new Date(r.created_at).toLocaleDateString()} — Mood: ${r.mood_level ?? "N/A"}, Sleep: ${r.sleep_hours ?? "N/A"}h, Exercise: ${r.exercise_minutes ?? "N/A"}m`
+        `${new Date(r.created_at).toLocaleDateString()} - Mood: ${
+          r.mood_level ?? "N/A"
+        }, Sleep: ${r.sleep_hours ?? "N/A"}h, Exercise: ${
+          r.exercise_minutes ?? "N/A"
+        }m`
       )
       if (r.journal_entry) {
         doc.fontSize(10).fillColor("gray").text(`"${r.journal_entry}"`)
@@ -73,26 +75,24 @@ export async function GET() {
       doc.moveDown(0.5)
     })
 
-    // Finalize PDF
     doc.end()
 
-    // ✅ Convert stream to buffer
-    const pdfBuffer: Buffer = await new Promise((resolve) => {
+    // ✅ Wait for the PDF buffer
+    const pdfBuffer = await new Promise<Buffer>((resolve) => {
       const chunks: Buffer[] = []
       stream.on("data", (chunk) => chunks.push(chunk))
       stream.on("end", () => resolve(Buffer.concat(chunks)))
     })
 
-    // ✅ Return PDF response (typed-safe)
+    // ✅ Return as PDF response
     return new Response(new Uint8Array(pdfBuffer), {
       headers: {
         "Content-Type": "application/pdf",
-        "Content-Disposition":
-          "attachment; filename=wellness_report.pdf",
+        "Content-Disposition": "attachment; filename=wellness_report.pdf",
       },
     })
   } catch (err: any) {
-    console.error("PDF export error:", err.message)
+    console.error("PDF export error:", err)
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
 }
