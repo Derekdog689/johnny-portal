@@ -1,15 +1,7 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServer } from "@/lib/supabaseServer";
-import PDFDocument from "pdfkit";
+import PdfPrinter from "pdfmake-lite";
 import { PassThrough } from "stream";
-
-// Minimal embedded font data (Helvetica-like fallback)
-const baseFontData = Buffer.from(`
-JVBERi0xLjUKJeLjz9MKMSAwIG9iago8PC9UeXBlL0ZvbnQvU3VidHlwZS9UcnVlVHlwZS9CYXNl
-Rm9udC9IZWx2ZXRpY2EvRW5jb2RpbmcvV2luQW5zaUVuY29kaW5nPj4KZW5kb2JqCnhyZWYKMCAy
-CjAwMDAwMDAwMDAgNjU1MzUgZiAKMDAwMDAwMDAxMCAwMDAwMCBuIAp0cmFpbGVyCjw8L1NpemUg
-Mi9Sb290IDEgMCBSL0luZm8gMiAwIFI+PgpzdGFydHhyZWYKNTYKJSVFT0YK
-`, "base64");
 
 export async function GET() {
   try {
@@ -24,46 +16,43 @@ export async function GET() {
     if (!data || data.length === 0)
       return NextResponse.json({ message: "No data available" }, { status: 404 });
 
-    // Create a PDF stream
-    const stream = new PassThrough();
-    const doc = new PDFDocument({ margin: 50 });
-
-    // Register and use embedded font (no fs calls)
-    doc.registerFont("EmbeddedFont", baseFontData);
-    doc.font("EmbeddedFont");
-
-    doc.pipe(stream);
-
-    // PDF CONTENT
-    doc.fontSize(18).text("Wellness Progress Report", { align: "center" });
-    doc.moveDown();
-    doc.fontSize(12).text(`Generated: ${new Date().toLocaleString()}`);
-    doc.moveDown();
-
+    // ✅ Define PDF layout
     const avgMood = data.reduce((a, r) => a + (r.mood_level || 0), 0) / data.length;
     const avgSleep = data.reduce((a, r) => a + (r.sleep_hours || 0), 0) / data.length;
     const avgExercise = data.reduce((a, r) => a + (r.exercise_minutes || 0), 0) / data.length;
 
-    doc.text(`Average Mood: ${avgMood.toFixed(2)}`);
-    doc.text(`Average Sleep: ${avgSleep.toFixed(2)} hours`);
-    doc.text(`Average Exercise: ${avgExercise.toFixed(2)} minutes`);
-    doc.moveDown();
+    const docDefinition = {
+      content: [
+        { text: "Wellness Progress Report", style: "header" },
+        { text: `Generated: ${new Date().toLocaleString()}`, margin: [0, 10, 0, 20] },
+        {
+          text: [
+            `Average Mood: ${avgMood.toFixed(2)}\n`,
+            `Average Sleep: ${avgSleep.toFixed(2)} hours\n`,
+            `Average Exercise: ${avgExercise.toFixed(2)} minutes\n`,
+          ],
+        },
+        { text: "Entries", style: "subheader", margin: [0, 20, 0, 10] },
+        ...data.map((r) => ({
+          text: `${new Date(r.created_at).toLocaleDateString()} - Mood: ${r.mood_level ?? "N/A"}, Sleep: ${r.sleep_hours ?? "N/A"}h, Exercise: ${r.exercise_minutes ?? "N/A"}m\n${r.journal_entry ? `"${r.journal_entry}"` : ""}`,
+          margin: [0, 0, 0, 8],
+          fontSize: 10,
+        })),
+      ],
+      styles: {
+        header: { fontSize: 18, bold: true, alignment: "center" },
+        subheader: { fontSize: 14, bold: true },
+      },
+    };
 
-    doc.fontSize(14).text("Entries", { underline: true });
-    doc.moveDown(0.5);
+    // ✅ Create PDF
+    const fonts = { Roboto: { normal: undefined } };
+    const printer = new PdfPrinter(fonts);
+    const pdfDoc = printer.createPdfKitDocument(docDefinition);
 
-    data.forEach((r) => {
-      doc.fontSize(12).text(
-        `${new Date(r.created_at).toLocaleDateString()} - Mood: ${r.mood_level ?? "N/A"}, Sleep: ${r.sleep_hours ?? "N/A"}h, Exercise: ${r.exercise_minutes ?? "N/A"}m`
-      );
-      if (r.journal_entry) {
-        doc.fontSize(10).fillColor("gray").text(`"${r.journal_entry}"`);
-        doc.fillColor("black");
-      }
-      doc.moveDown(0.5);
-    });
-
-    doc.end();
+    const stream = new PassThrough();
+    pdfDoc.pipe(stream);
+    pdfDoc.end();
 
     const pdfBuffer = await new Promise<Buffer>((resolve) => {
       const chunks: Buffer[] = [];
