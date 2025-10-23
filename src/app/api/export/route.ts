@@ -23,7 +23,10 @@ export async function GET() {
 
     // ✅ Initialize PDF and stream
     const stream = new PassThrough()
-    const doc = new PDFDocument({ margin: 50 })
+    const doc = new PDFDocument({
+  margin: 50,
+  font: path.join(process.cwd(), "public", "fonts", "RobotoMono-Regular.ttf"),
+})
 
     // ✅ Register Roboto Mono font (prevents Helvetica.afm error)
     const fontPath = path.join(process.cwd(), "public", "fonts", "RobotoMono-Regular.ttf")
@@ -32,9 +35,7 @@ export async function GET() {
       throw new Error(`Font not found at ${fontPath}`)
     }
 
-    doc.registerFont("RobotoMono", fontPath)
-    doc.font("RobotoMono")
-
+    
     // ✅ Pipe PDF to stream
     doc.pipe(stream)
 
