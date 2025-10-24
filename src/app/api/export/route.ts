@@ -1,36 +1,50 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServer } from "@/lib/supabaseServer";
-import PDFDocument from "pdfkit";
+// @ts-expect-error: pdfkit standalone build lacks TypeScript declarations
+import PDFDocument from "pdfkit/js/pdfkit.standalone.js";
 import { PassThrough } from "stream";
 
+/**
+ * Wellness Report Export (Server-safe + Font embedded)
+ */
 export async function GET() {
   try {
     const supabase = await createSupabaseServer();
 
+    // Fetch wellness data
     const { data, error } = await supabase
       .from("wellness")
       .select("created_at, mood_level, sleep_hours, exercise_minutes, journal_entry")
       .order("created_at", { ascending: true });
 
     if (error) throw error;
-    if (!data || data.length === 0)
+    if (!data || data.length === 0) {
       return NextResponse.json({ message: "No data available" }, { status: 404 });
+    }
 
-    // ✅ Create a memory-safe PDF (no file system access)
+    // Stream for PDF
     const stream = new PassThrough();
-    const doc = new PDFDocument({ margin: 50 });
 
-    // ✅ Use only built-in fonts (Helvetica, Times, Courier)
-    doc.font("Helvetica");
+    // Create document safely
+    const doc = new PDFDocument({ margin: 50, compress: false });
 
+    // ✅ Load RobotoMono font dynamically (no fs dependency)
+    const fontUrl = `${process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000"}/fonts/RobotoMono-Regular.ttf`;
+    const fontResponse = await fetch(fontUrl);
+    const fontBuffer = Buffer.from(await fontResponse.arrayBuffer());
+    doc.registerFont("RobotoMono", fontBuffer);
+    doc.font("RobotoMono");
+
+    // Pipe stream
     doc.pipe(stream);
 
-    // ---------- PDF CONTENT ----------
+    // Header
     doc.fontSize(18).text("Wellness Progress Report", { align: "center" });
     doc.moveDown();
     doc.fontSize(12).text(`Generated: ${new Date().toLocaleString()}`);
     doc.moveDown();
 
+    // Averages
     const avgMood = data.reduce((a, r) => a + (r.mood_level || 0), 0) / data.length;
     const avgSleep = data.reduce((a, r) => a + (r.sleep_hours || 0), 0) / data.length;
     const avgExercise = data.reduce((a, r) => a + (r.exercise_minutes || 0), 0) / data.length;
@@ -40,12 +54,13 @@ export async function GET() {
     doc.text(`Average Exercise: ${avgExercise.toFixed(2)} minutes`);
     doc.moveDown();
 
+    // Entries
     doc.fontSize(14).text("Entries", { underline: true });
     doc.moveDown(0.5);
 
     data.forEach((r) => {
       doc.fontSize(12).text(
-        `${new Date(r.created_at).toLocaleDateString()} - Mood: ${r.mood_level ?? "N/A"}, Sleep: ${r.sleep_hours ?? "N/A"}h, Exercise: ${r.exercise_minutes ?? "N/A"}m`
+        `${new Date(r.created_at).toLocaleDateString()} — Mood: ${r.mood_level ?? "N/A"}, Sleep: ${r.sleep_hours ?? "N/A"}h, Exercise: ${r.exercise_minutes ?? "N/A"}m`
       );
       if (r.journal_entry) {
         doc.fontSize(10).fillColor("gray").text(`"${r.journal_entry}"`);
@@ -62,11 +77,11 @@ export async function GET() {
       stream.on("end", () => resolve(Buffer.concat(chunks)));
     });
 
-    // ✅ Return safe response
-    return new Response(new Uint8Array(pdfBuffer), {
+    // ✅ Return PDF
+    return new Response(pdfBuffer, {
       headers: {
         "Content-Type": "application/pdf",
-        "Content-Disposition": "attachment; filename=wellness_report.pdf",
+        "Content-Disposition": 'attachment; filename="wellness_report.pdf"',
       },
     });
   } catch (err: any) {
