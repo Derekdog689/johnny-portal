@@ -73,14 +73,16 @@ export async function GET() {
       stream.on("end", () => resolve(Buffer.concat(chunks)));
     });
 
-    // Return as downloadable PDF
-    return new Response(pdfBuffer, {
-      headers: {
-        "Content-Type": "application/pdf",
-        "Content-Disposition": 'attachment; filename="wellness_report.pdf"',
-        "Cache-Control": "no-store",
-      },
-    });
+   // Return as downloadable PDF (Edge-safe)
+const uint8 = new Uint8Array(pdfBuffer);
+return new Response(uint8, {
+  headers: {
+    "Content-Type": "application/pdf",
+    "Content-Disposition": 'attachment; filename="wellness_report.pdf"',
+    "Cache-Control": "no-store",
+  },
+});
+
   } catch (err: any) {
     console.error("PDF export error:", err.message);
     return NextResponse.json({ error: err.message }, { status: 500 });
