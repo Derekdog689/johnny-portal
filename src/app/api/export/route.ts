@@ -1,17 +1,12 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServer } from "@/lib/supabaseServer";
-// @ts-expect-error: pdfkit standalone build lacks TypeScript declarations
 import PDFDocument from "pdfkit/js/pdfkit.standalone.js";
 import { PassThrough } from "stream";
 
-/**
- * Wellness Report Export (Server-safe + Font embedded)
- */
 export async function GET() {
   try {
     const supabase = await createSupabaseServer();
 
-    // Fetch wellness data
     const { data, error } = await supabase
       .from("wellness")
       .select("created_at, mood_level, sleep_hours, exercise_minutes, journal_entry")
@@ -22,23 +17,21 @@ export async function GET() {
       return NextResponse.json({ message: "No data available" }, { status: 404 });
     }
 
-    // Stream for PDF
+    // Create stream and PDF document
     const stream = new PassThrough();
-
-    // Create document safely
     const doc = new PDFDocument({ margin: 50, compress: false });
 
-    // ✅ Load RobotoMono font dynamically (no fs dependency)
+    // 🔹 Embed RobotoMono as default font
     const fontUrl = `${process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000"}/fonts/RobotoMono-Regular.ttf`;
     const fontResponse = await fetch(fontUrl);
     const fontBuffer = Buffer.from(await fontResponse.arrayBuffer());
     doc.registerFont("RobotoMono", fontBuffer);
     doc.font("RobotoMono");
 
-    // Pipe stream
+    // Start piping
     doc.pipe(stream);
 
-    // Header
+    // Header section
     doc.fontSize(18).text("Wellness Progress Report", { align: "center" });
     doc.moveDown();
     doc.fontSize(12).text(`Generated: ${new Date().toLocaleString()}`);
@@ -60,7 +53,9 @@ export async function GET() {
 
     data.forEach((r) => {
       doc.fontSize(12).text(
-        `${new Date(r.created_at).toLocaleDateString()} — Mood: ${r.mood_level ?? "N/A"}, Sleep: ${r.sleep_hours ?? "N/A"}h, Exercise: ${r.exercise_minutes ?? "N/A"}m`
+        `${new Date(r.created_at).toLocaleDateString()} — Mood: ${r.mood_level ?? "N/A"}, Sleep: ${
+          r.sleep_hours ?? "N/A"
+        }h, Exercise: ${r.exercise_minutes ?? "N/A"}m`
       );
       if (r.journal_entry) {
         doc.fontSize(10).fillColor("gray").text(`"${r.journal_entry}"`);
@@ -71,17 +66,19 @@ export async function GET() {
 
     doc.end();
 
+    // Capture PDF buffer
     const pdfBuffer = await new Promise<Buffer>((resolve) => {
       const chunks: Buffer[] = [];
       stream.on("data", (chunk) => chunks.push(chunk));
       stream.on("end", () => resolve(Buffer.concat(chunks)));
     });
 
-    // ✅ Return PDF
+    // Return as downloadable PDF
     return new Response(pdfBuffer, {
       headers: {
         "Content-Type": "application/pdf",
         "Content-Disposition": 'attachment; filename="wellness_report.pdf"',
+        "Cache-Control": "no-store",
       },
     });
   } catch (err: any) {
