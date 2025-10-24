@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServer } from "@/lib/supabaseServer";
-import PdfPrinter from "pdfmake-lite";
+import PDFDocument from "pdfkit";
 import { PassThrough } from "stream";
 
 export async function GET() {
@@ -16,43 +16,45 @@ export async function GET() {
     if (!data || data.length === 0)
       return NextResponse.json({ message: "No data available" }, { status: 404 });
 
-    // ✅ Define PDF layout
+    // ✅ Create a memory-safe PDF (no file system access)
+    const stream = new PassThrough();
+    const doc = new PDFDocument({ margin: 50 });
+
+    // ✅ Use only built-in fonts (Helvetica, Times, Courier)
+    doc.font("Helvetica");
+
+    doc.pipe(stream);
+
+    // ---------- PDF CONTENT ----------
+    doc.fontSize(18).text("Wellness Progress Report", { align: "center" });
+    doc.moveDown();
+    doc.fontSize(12).text(`Generated: ${new Date().toLocaleString()}`);
+    doc.moveDown();
+
     const avgMood = data.reduce((a, r) => a + (r.mood_level || 0), 0) / data.length;
     const avgSleep = data.reduce((a, r) => a + (r.sleep_hours || 0), 0) / data.length;
     const avgExercise = data.reduce((a, r) => a + (r.exercise_minutes || 0), 0) / data.length;
 
-    const docDefinition = {
-      content: [
-        { text: "Wellness Progress Report", style: "header" },
-        { text: `Generated: ${new Date().toLocaleString()}`, margin: [0, 10, 0, 20] },
-        {
-          text: [
-            `Average Mood: ${avgMood.toFixed(2)}\n`,
-            `Average Sleep: ${avgSleep.toFixed(2)} hours\n`,
-            `Average Exercise: ${avgExercise.toFixed(2)} minutes\n`,
-          ],
-        },
-        { text: "Entries", style: "subheader", margin: [0, 20, 0, 10] },
-        ...data.map((r) => ({
-          text: `${new Date(r.created_at).toLocaleDateString()} - Mood: ${r.mood_level ?? "N/A"}, Sleep: ${r.sleep_hours ?? "N/A"}h, Exercise: ${r.exercise_minutes ?? "N/A"}m\n${r.journal_entry ? `"${r.journal_entry}"` : ""}`,
-          margin: [0, 0, 0, 8],
-          fontSize: 10,
-        })),
-      ],
-      styles: {
-        header: { fontSize: 18, bold: true, alignment: "center" },
-        subheader: { fontSize: 14, bold: true },
-      },
-    };
+    doc.text(`Average Mood: ${avgMood.toFixed(2)}`);
+    doc.text(`Average Sleep: ${avgSleep.toFixed(2)} hours`);
+    doc.text(`Average Exercise: ${avgExercise.toFixed(2)} minutes`);
+    doc.moveDown();
 
-    // ✅ Create PDF
-    const fonts = { Roboto: { normal: undefined } };
-    const printer = new PdfPrinter(fonts);
-    const pdfDoc = printer.createPdfKitDocument(docDefinition);
+    doc.fontSize(14).text("Entries", { underline: true });
+    doc.moveDown(0.5);
 
-    const stream = new PassThrough();
-    pdfDoc.pipe(stream);
-    pdfDoc.end();
+    data.forEach((r) => {
+      doc.fontSize(12).text(
+        `${new Date(r.created_at).toLocaleDateString()} - Mood: ${r.mood_level ?? "N/A"}, Sleep: ${r.sleep_hours ?? "N/A"}h, Exercise: ${r.exercise_minutes ?? "N/A"}m`
+      );
+      if (r.journal_entry) {
+        doc.fontSize(10).fillColor("gray").text(`"${r.journal_entry}"`);
+        doc.fillColor("black");
+      }
+      doc.moveDown(0.5);
+    });
+
+    doc.end();
 
     const pdfBuffer = await new Promise<Buffer>((resolve) => {
       const chunks: Buffer[] = [];
@@ -60,6 +62,7 @@ export async function GET() {
       stream.on("end", () => resolve(Buffer.concat(chunks)));
     });
 
+    // ✅ Return safe response
     return new Response(new Uint8Array(pdfBuffer), {
       headers: {
         "Content-Type": "application/pdf",
