@@ -1,7 +1,6 @@
 // /src/app/api/trust/export/route.ts
 import { NextResponse } from 'next/server';
 import { createSupabaseServer } from '@/lib/supabaseServer';
-// @ts-expect-error: standalone build has no TS types
 import PDFDocument from 'pdfkit/js/pdfkit.standalone.js';
 import { PassThrough } from 'stream';
 
