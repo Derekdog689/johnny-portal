@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import TrustSummary from '@/components/TrustSummary'
 import TransactionForm from '@/components/TransactionForm'
-import TrustCharts from '@/components/TrustCharts'
+import TrustCharts from '@/components/TrustChart'
 
 // ===========================================================
 //  MAIN COMPONENT: TrustDashboard
